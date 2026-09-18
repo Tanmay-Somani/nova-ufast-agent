@@ -1,4 +1,4 @@
-"""Loopback-only inspector for the Jev browser agent."""
+"""Loopback-only inspector for the Nova UFast browser agent."""
 
 import atexit
 import json
@@ -85,10 +85,6 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/state":
             with LOCK:
                 return self.send(200, json.dumps(response_state()))
-        if path == "/demo.mp4":
-            video = ROOT.parent / "docs" / "demo.mp4"
-            if video.exists():
-                return self.send(200, video.read_bytes(), "video/mp4")
         files = {
             "/": ("index.html", "text/html"),
             "/app.js": ("app.js", "text/javascript"),
@@ -132,7 +128,7 @@ def main():
     load_environment()
     atexit.register(close_browser)
     server = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
-    print(f"Jev Ultrafast: {ORIGIN}", flush=True)
+    print(f"Nova UFast Agent: {ORIGIN}", flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
