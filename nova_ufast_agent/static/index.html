@@ -4,76 +4,117 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <meta name="demo-token" content="__TOKEN__" />
-    <title>Jev Ultrafast · Browser Use</title>
-    <link rel="stylesheet" href="https://rsms.me/inter/inter.css" />
+    <title>Nova UFast Agent · Local Inspector</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link
+      rel="stylesheet"
+      href="https://rsms.me/inter/inter.css"
+    />
     <link rel="stylesheet" href="/style.css" />
   </head>
-  <body>
-    <header>
-      <a href="/" aria-label="Homepage" class="brand"
-        >browser<span>use</span> <i>×</i> TypeSafe</a
+  <body data-status="idle">
+    <header class="masthead">
+      <a href="/" aria-label="Nova UFast Agent home" class="brand"
+        >nova<span class="brand-accent">·ufast</span>
+        <small class="brand-sub">browser agent</small></a
       >
-      <div class="local"><span class="dot"></span> Jev Ultrafast</div>
+      <div class="local">
+        <span class="dot" id="header-dot"></span>
+        Local inspector
+      </div>
     </header>
+
     <main>
-      <section class="intro">
-        <div>
+      <section class="intro reveal">
+        <div class="intro-copy">
           <p class="eyebrow">A BROWSER THAT CHOOSES</p>
-          <h1>Every page is a set of possibilities.</h1>
-          <p>
-            Jev picks the next action. A small language model handles the words.
-            <a href="/demo.mp4" target="_blank" rel="noopener">Watch the real Google Flights run ↗</a>
+          <h1 class="gradient-text">
+            Every page is a set of <em>possibilities</em>.
+          </h1>
+          <p class="lede">
+            Give it one goal. The decision model picks the next operation and
+            element — a small text model writes the words, only when typing is
+            chosen. Everything else stays code-owned.
           </p>
+          <ul class="hero-chips" aria-label="Supported operations">
+            <li class="chip op-click">CLICK</li>
+            <li class="chip op-type">TYPE_TEXT</li>
+            <li class="chip op-select">SELECT</li>
+            <li class="chip op-scroll">SCROLL</li>
+            <li class="chip op-done">DONE</li>
+          </ul>
         </div>
-        <div class="model-tag">jev-latest <span>+ text helper</span></div>
+        <div class="model-tag">
+          <span class="model-dot"></span>
+          decision model
+          <b id="model-name">jev-latest</b>
+          <i>×</i>
+          text helper
+          <b id="helper">loading</b>
+        </div>
       </section>
-      <form id="task-form">
+
+      <form id="task-form" class="task-form reveal">
         <div class="task-label">
-          <label for="goal">Give it a task</label
-          ><select id="scenario" name="scenario" aria-label="Demo scenario">
+          <label for="goal">Give it a task</label>
+          <select id="scenario" name="scenario" aria-label="Demo scenario">
             <option value="flights">Google Flights · real web</option>
             <option value="travel">Travel planner · fixture</option>
             <option value="research">Reading room · fixture</option>
           </select>
         </div>
         <div class="task-row">
-          <textarea id="goal" name="goal" rows="5">
+          <textarea id="goal" name="goal" rows="4" spellcheck="false">
 Find one-way flights from Zurich to London on September 20, 2026, for one adult in economy. Stop when matching flight options are visible. Do not select or book a flight.</textarea
-          ><button type="submit" id="start" class="primary">
-            Start demo <span>↗</span>
+          >
+          <button type="submit" id="start" class="primary btn">
+            <span class="btn-live"></span> Start demo
           </button>
         </div>
       </form>
-      <div class="toolbar">
+
+      <div class="toolbar reveal">
         <div class="status">
           <span class="dot" id="status-dot"></span
           ><span id="status" role="status">Ready to explore</span>
         </div>
-        <div class="controls"><label class="overlay-control"><input name="pace" id="pace" type="checkbox"> Slow motion</label>
+        <div class="controls">
+          <label class="overlay-control"
+            ><input name="pace" id="pace" type="checkbox" /> Slow motion</label
+          >
           <label class="overlay-control"
             ><input name="overlays" id="overlays" type="checkbox" checked />
             Targets</label
-          ><button type="button" id="choose" disabled>Choose next</button
-          ><button type="button" id="execute" disabled>Execute choice</button
-          ><button type="button" id="auto" disabled>Run automatically</button
-          ><button type="button" id="stop" hidden>Pause</button>
+          >
+          <button type="button" id="choose" class="btn" disabled>
+            Choose next
+          </button>
+          <button type="button" id="execute" class="btn" disabled>
+            Execute choice
+          </button>
+          <button type="button" id="auto" class="btn btn-primary" disabled>
+            Run automatically
+          </button>
+          <button type="button" id="stop" class="btn" hidden>Pause</button>
         </div>
       </div>
-      <div id="error" role="alert" hidden></div>
-      <section class="workspace">
+
+      <div id="error" class="error" role="alert" hidden></div>
+
+      <section class="workspace reveal">
         <div class="browser-panel">
           <div class="browser-bar">
             <div class="traffic"><b></b><b></b><b></b></div>
-            <span id="url">Local demo browser</span
-            ><span class="live">LIVE</span>
+            <span id="url">Local demo browser</span>
+            <span class="live">LIVE</span>
           </div>
           <div class="viewport" id="viewport">
             <div class="empty" id="empty">
               <p class="empty-symbol">[ ↗ ]</p>
               <h2>Watch the decision happen.</h2>
               <p>
-                Start a task to see a real browser, its available<br />actions,
-                and the model's choice.
+                Start a task to see a real browser, its available<br />
+                actions, and the model&rsquo;s choice.
               </p>
             </div>
             <img
@@ -84,30 +125,39 @@ Find one-way flights from Zurich to London on September 20, 2026, for one adult 
             <div id="targets"></div>
           </div>
           <div class="browser-footer">
-            <span id="page-title">Isolated demo tab</span
-            ><span>AX tree → typed actions → CDP</span>
+            <span id="page-title">Isolated demo tab</span>
+            <span>DOM snapshot → typed actions → CDP</span>
           </div>
         </div>
+
         <aside>
           <div class="aside-header">
             <div>
               <p class="eyebrow">NEXT ACTION</p>
               <h2 id="choice-title">Waiting for a page</h2>
             </div>
-            <span id="action-count">0 options</span>
+            <span class="action-count" id="action-count">0 options</span>
           </div>
+
           <div id="plan" class="plan"></div>
+
           <div class="metrics">
-            <div><span>Decision time</span><strong id="latency">—</strong></div>
             <div>
-              <span>Target confidence</span><strong id="confidence">—</strong>
+              <span>Decision time</span
+              ><strong id="latency">—</strong>
+            </div>
+            <div>
+              <span>Target confidence</span
+              ><strong id="confidence">—</strong>
             </div>
             <div>
               <span>Operation</span
               ><strong id="completion">—</strong>
             </div>
           </div>
+
           <div id="operation-choices" class="operation-choices"></div>
+
           <p class="distribution-label">
             Indexed elements
             <span id="ranking-note">Choose next to rank</span>
@@ -115,30 +165,39 @@ Find one-way flights from Zurich to London on September 20, 2026, for one adult 
           <div id="choices" class="choices">
             <p class="muted">Available actions will appear here.</p>
           </div>
+
           <p class="aside-note">
-            Operation and target are separate choices in one request.<br />Text is generated only for TYPE_TEXT.
+            Operation and target are separate choices in one request.<br />
+            Text is generated only for TYPE_TEXT.
           </p>
         </aside>
       </section>
-      <section class="trace">
+
+      <section class="trace reveal">
         <div class="trace-heading">
           <h2>Decision trail <span id="step-count">0 actions</span></h2>
-          <button type="button" id="download" disabled>Export trace ↓</button>
+          <button type="button" id="download" class="btn" disabled>
+            Export trace ↓
+          </button>
         </div>
         <div id="history">
           <p class="muted">Each executed action leaves an observed result.</p>
         </div>
       </section>
-      <details>
+
+      <details class="model-state">
         <summary>What the model sees</summary>
         <pre id="model-state">
-Start a demo to inspect its structured state.</pre>
+Start a demo to inspect its structured state.</pre
+        >
       </details>
+
       <footer>
-        <span>Browser Use × TypeSafe · Experimental baseline</span
-        ><span id="helper">Text helper loading</span>
+        <span>Nova UFast Agent · experimental baseline</span>
+        <span id="helper-footer">text helper loading</span>
       </footer>
     </main>
+
     <script type="module" src="/app.js"></script>
   </body>
 </html>

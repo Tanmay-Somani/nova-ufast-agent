@@ -48,6 +48,7 @@ async function perform(fn, label) {
   $("error").hidden = true;
   controls();
   $("status").textContent = label;
+  $("status-dot").classList.add("busy");
   try {
     await fn();
   } catch (error) {
@@ -58,17 +59,22 @@ async function perform(fn, label) {
     } catch {
       /* Preserve the original failure if the server disconnected. */
     }
-    $("error").textContent = error.message;
+    $("error").textContent = escape(error.message);
+    $("error").innerHTML = `<strong>${escape(error.message)}</strong>`;
     $("error").hidden = false;
     $("status").textContent = "Paused · needs attention";
   } finally {
     busy = false;
+    $("status-dot").classList.remove("busy");
     controls();
   }
 }
 function render() {
   if (!state) return;
-  $("helper").textContent = `Text helper · ${state.text_model}`;
+  document.body.dataset.status = state.status;
+  $("helper").textContent = state.text_model;
+  const footerHelper = $("helper-footer");
+  if (footerHelper) footerHelper.textContent = `text helper · ${state.text_model}`;
   $("plan").innerHTML = (state.plan || [])
     .map(
       (goal, i) =>
@@ -83,7 +89,7 @@ function render() {
     idle: "Ready to explore",
     ready: "Page observed · ready for a decision",
     predicted: "Choice ready · inspect or execute",
-    done: "Jev reports complete · inspect the page",
+    done: "Reports complete · inspect the page",
     blocked: "Stopped · no supported next action",
   };
   $("status").textContent = labels[state.status] || state.status;
@@ -92,8 +98,14 @@ function render() {
     return;
   }
   $("empty").hidden = true;
-  $("screenshot").hidden = false;
-  $("screenshot").src = `data:image/jpeg;base64,${page.screenshot}`;
+  const shot = $("screenshot");
+  shot.hidden = false;
+  if (shot.dataset.frame !== page.screenshot) {
+    shot.dataset.frame = page.screenshot;
+    shot.classList.remove("loaded");
+    shot.onload = () => shot.classList.add("loaded");
+    shot.src = `data:image/jpeg;base64,${page.screenshot}`;
+  }
   $("url").textContent = page.url;
   $("page-title").textContent = page.title;
   $("action-count").textContent = `${state.elements.length} elements`;
@@ -102,33 +114,48 @@ function render() {
     ? chosen?.label || d.choice
     : "Choose an action";
   $("latency").textContent = d ? `${d.latency_ms} ms` : "—";
-  $("confidence").textContent = d?.target_confidence != null ? percent(d.target_confidence) : "—";
+  $("confidence").textContent = d?.target_confidence != null
+    ? percent(d.target_confidence)
+    : "—";
   $("completion").textContent = d ? d.operation : "—";
-  $("ranking-note").textContent = d ? "Ranked by Jev" : "Unranked";
-  const op = Object.entries(d?.operation_probabilities || {}).sort((a,b)=>b[1]-a[1]);
-  $("operation-choices").innerHTML = op.map(([name,p]) =>
-    `<span class="operation-choice ${name === d.operation ? 'best' : ''}">${escape(name)} <b>${percent(p)}</b></span>`).join('');
-  const probability = e => d?.target_probabilities[e.index] ??
-    Math.max(-1, ...(e.options || []).map(o=>d?.target_probabilities[o.index] ?? -1));
-  const selectedIndex = d?.target?.split(':')[0];
+  $("ranking-note").textContent = d
+    ? "Ranked by decision model"
+    : "Unranked";
+  const op = Object.entries(d?.operation_probabilities || {}).sort(
+    (a, b) => b[1] - a[1],
+  );
+  $("operation-choices").innerHTML = op
+    .map(
+      ([name, p]) =>
+        `<span class="operation-choice ${name === d.operation ? "best" : ""}">${escape(name)} <b>${percent(p)}</b></span>`,
+    )
+    .join("");
+  const probability = (e) =>
+    d?.target_probabilities[e.index] ??
+    Math.max(-1, ...(e.options || []).map((o) => d?.target_probabilities[o.index] ?? -1));
+  const selectedIndex = d?.target?.split(":")[0];
   const elements = [...state.elements];
-  if (d) elements.sort((a,b)=>probability(b)-probability(a));
-  $("choices").innerHTML = elements.map(e => {
-    const p = probability(e);
-    return `<div class="choice ${selectedIndex === e.index ? 'best' : ''}" data-action="${escape(e.index)}"><span class="choice-id">[${escape(e.index)}]</span><div class="choice-label">${escape(e.label)}<small>${escape(e.role)} · ${escape(e.operations.join(' / '))}${e.value ? ' · '+escape(e.value) : ''}${e.checked !== undefined ? ' · checked '+escape(e.checked) : ''}</small>${p >= 0 ? `<div class="bar" style="--probability:${p*100}%"></div>` : ''}</div><span class="probability">${p >= 0 ? percent(p) : '—'}</span></div>`;
-  }).join('');
+  if (d) elements.sort((a, b) => probability(b) - probability(a));
+  $("choices").innerHTML = elements
+    .map((e) => {
+      const p = probability(e);
+      return `<div class="choice ${selectedIndex === e.index ? "best" : ""}" data-action="${escape(e.index)}" tabindex="0"><span class="choice-id">[${escape(e.index)}]</span><div class="choice-label">${escape(e.label)}<small>${escape(e.role)} · ${escape(e.operations.join(" / "))}${e.value ? " · " + escape(e.value) : ""}${e.checked !== undefined ? " · checked " + escape(e.checked) : ""}</small>${p >= 0 ? `<div class="bar" style="--probability:${p * 100}%"></div>` : ""}</div><span class="probability">${p >= 0 ? percent(p) : "—"}</span></div>`;
+    })
+    .join("");
   const targets = new Map();
   for (const a of page.actions) if (a.rect && !targets.has(a.node)) targets.set(a.node, a);
-  $("targets").innerHTML = [...targets.values()].map((a,i) => {
-    const index=String(i+1);
-    return `<div class="target ${index === selectedIndex ? 'selected' : ''}" data-action="${index}" style="left:${100*a.rect.x/page.w}%;top:${100*a.rect.y/page.h}%;width:${100*a.rect.w/page.w}%;height:${100*a.rect.h/page.h}%"><span>${index}</span></div>`;
-  }).join('');
+  $("targets").innerHTML = [...targets.values()]
+    .map((a, i) => {
+      const index = String(i + 1);
+      return `<div class="target ${index === selectedIndex ? "selected" : ""}" data-action="${index}" style="left:${(100 * a.rect.x) / page.w}%;top:${(100 * a.rect.y) / page.h}%;width:${(100 * a.rect.w) / page.w}%;height:${(100 * a.rect.h) / page.h}%"><span>${index}</span></div>`;
+    })
+    .join("");
   $("targets").hidden = !$("overlays").checked;
   $("history").innerHTML = state.history.length
     ? state.history
         .map(
           (h) =>
-            `<div class="trace-row"><span class="number">${String(h.step).padStart(2, "0")}</span><div>${escape(h.action)}${h.text ? ` <b>“${escape(h.text)}”</b><small>${escape(h.text_helper)}</small>` : ""}</div><span class="time">${h.latency_ms} ms · ${percent(h.probability)}</span><span class="effect">${h.page_changed ? "Page changed" : "No change observed"}</span></div>`,
+            `<div class="trace-row"><span class="number">${String(h.step).padStart(2, "0")}</span><div>${escape(h.action)}${h.text ? ` <b>“${escape(h.text)}”</b><small>${escape(h.text_helper)}</small>` : ""}</div><span class="time">${h.latency_ms} ms · ${percent(h.probability)}</span><span class="effect ${h.page_changed ? "" : "no-change"}">${h.page_changed ? "Page changed" : "No change observed"}</span></div>`,
         )
         .join("")
     : '<p class="muted">Each executed action leaves an observed result.</p>';
@@ -145,12 +172,19 @@ function render() {
   );
   controls();
 }
+function focusTarget(index) {
+  document.querySelectorAll(".target").forEach((t) => {
+    t.classList.toggle(
+      "selected",
+      t.dataset.action === index || t.dataset.action === state?.decision?.target?.split(":")[0],
+    );
+  });
+}
 $("task-form").addEventListener("submit", (event) => {
   event.preventDefault();
   automatic = false;
   perform(
-    () =>
-      call("reset", { scenario: $("scenario").value, goal: $("goal").value }),
+    () => call("reset", { scenario: $("scenario").value, goal: $("goal").value }),
     "Opening a fresh browser…",
   );
 });
@@ -158,7 +192,7 @@ $("scenario").addEventListener("change", () => {
   $("goal").value = goals[$("scenario").value];
 });
 $("choose").addEventListener("click", () =>
-  perform(() => call("predict"), "Jev is comparing the actions…"),
+  perform(() => call("predict"), "Comparing the actions…"),
 );
 $("execute").addEventListener("click", () =>
   perform(
@@ -174,9 +208,9 @@ $("auto").addEventListener("click", () =>
       $("status").textContent = "Running…";
       if ($("pace").checked) {
         await call("predict");
-        await new Promise(resolve => setTimeout(resolve, 450));
+        await new Promise((resolve) => setTimeout(resolve, 450));
         if (!automatic) break;
-        await call("act", {fingerprint: state.page.fingerprint});
+        await call("act", { fingerprint: state.page.fingerprint });
       } else {
         await call("tick");
       }
@@ -195,24 +229,10 @@ $("overlays").addEventListener("change", () => {
 });
 $("choices").addEventListener("pointerover", (event) => {
   const id = event.target.closest("[data-action]")?.dataset.action;
-  document
-    .querySelectorAll(".target")
-    .forEach((t) =>
-      t.classList.toggle(
-        "selected",
-        t.dataset.action === id || t.dataset.action === state?.decision?.target?.split(':')[0],
-      ),
-    );
+  if (id) focusTarget(id);
 });
 $("choices").addEventListener("pointerleave", () =>
-  document
-    .querySelectorAll(".target")
-    .forEach((t) =>
-      t.classList.toggle(
-        "selected",
-        t.dataset.action === state?.decision?.target?.split(':')[0],
-      ),
-    ),
+  focusTarget(null),
 );
 $("download").addEventListener("click", () => {
   const { page, ...rest } = state;
@@ -229,7 +249,7 @@ $("download").addEventListener("click", () => {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = "typesafe-browser-trace.json";
+  a.download = "nova-ufast-trace.json";
   a.click();
   URL.revokeObjectURL(url);
 });
