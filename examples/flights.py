@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from jev_ultrafast import Agent
+from nova_ufast_agent import Agent
 
 URL = "https://www.google.com/travel/flights?hl=en"
 GOALS = (
