@@ -353,7 +353,7 @@ The test suite runs fully offline — model calls are mocked, no API keys needed
 - [ ] Pluggable decision/helper adapters (OpenAI-compatible choice endpoints)
 - [ ] Shadow-root / frame traversal in the DOM reader
 - [ ] Optional headless mode
-- [ ] GitHub Actions CI (lint + tests + publish on tag)
+- [x] GitHub Actions CI (lint + tests) and tag-based PyPI publishing
 
 ## Contributing
 
