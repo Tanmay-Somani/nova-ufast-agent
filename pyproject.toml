@@ -1,18 +1,55 @@
 [project]
-name = "jev-ultrafast"
+name = "nova-ufast-agent"
 version = "0.1.0"
-description = "A browser agent that chooses instead of generating."
+description = "An ultrafast browser agent with a dynamic, indexed action space."
 readme = "README.md"
-license = "MIT"
+license = { text = "MIT" }
 requires-python = ">=3.12"
+keywords = [
+    "browser",
+    "agent",
+    "automation",
+    "llm",
+    "typesafe",
+    "browser-agent",
+    "web-automation",
+]
+authors = [{ name = "Tanmay Somani" }]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Internet :: WWW/HTTP :: Browsers",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
 dependencies = ["browser-harness==0.1.13", "httpx[http2]>=0.28,<1"]
 
+[project.urls]
+Homepage = "https://github.com/Tanmay-Somani/nova-ufast-agent"
+Source = "https://github.com/Tanmay-Somani/nova-ufast-agent"
+Documentation = "https://github.com/Tanmay-Somani/nova-ufast-agent"
+
 [project.scripts]
-jev = "jev_ultrafast.demo:main"
+nova-ufast = "nova_ufast_agent.demo:main"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["nova_ufast_agent"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "nova_ufast_agent/**",
+    "examples/**",
+    "tests/**",
+]
 
 [dependency-groups]
 dev = ["pytest>=8.4,<9", "ruff>=0.14,<1", "pillow>=11,<13"]
