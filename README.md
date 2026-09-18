@@ -1,24 +1,82 @@
-<img src="docs/banner.svg" alt="Jev Ultrafast · Browser Use × TypeSafe" width="100%" />
+<div align="center">
 
-# Jev Ultrafast ⚡
+# nova-ufast-agent
 
-> [!IMPORTANT]
-> **The Browser Use Cloud waitlist is open.** Get early access to ultrafast browser agents in the cloud.
-> **[Join the waitlist →](https://browser-use.com/ultrafast?utm_source=github&utm_medium=readme&utm_campaign=jev-ultrafast)**
+**A browser automaton that indexes what it sees, decides what it does, and types only the words.**
 
-**A browser agent with a dynamic, indexed action space.**
+`pip install nova-ufast-agent`
 
-Give it one goal. [TypeSafe's Jev](https://docs.typesafe.ai/introduction) picks an operation and an element. A small LLM writes text only when the operation is `TYPE_TEXT`.
+[![PyPI - Version](https://img.shields.io/pypi/v/nova-ufast-agent?color=6c8cff&label=version)](https://pypi.org/project/nova-ufast-agent/)
+[![PyPI - Python](https://img.shields.io/pypi/pyversions/nova-ufast-agent?color=37d5b9)](https://pypi.org/project/nova-ufast-agent/)
+[![PyPI - License](https://img.shields.io/pypi/l/nova-ufast-agent?color=brightgreen)](https://github.com/Tanmay-Somani/nova-ufast-agent/blob/main/LICENSE)
+[![Tests](https://img.shields.io/badge/tests-31%20passing-brightgreen)]()
 
-**Zürich → London on Google Flights in 7.1 seconds.** One natural-language goal, actual text generation, and loading waits included.
+</div>
 
-<a href="docs/demo.mp4"><img src="docs/demo.gif" alt="A real Google Flights search at 1× speed, with generated city names and dynamic operation/target decisions" width="100%" /></a>
+---
 
-[Watch the MP4](docs/demo.mp4) · [Measurements](docs/performance.md) · [Read the loop](jev_ultrafast/agent.py)
+## Table of contents
 
-## The action space
+- [What it does](#what-it-does)
+- [Highlights](#highlights)
+- [How decisions are made](#how-decisions-are-made)
+- [Requirements](#requirements)
+- [Install](#install)
+- [Quick start](#quick-start)
+- [Using the library](#using-the-library)
+- [Configuration](#configuration)
+- [Operations](#operations)
+- [API reference](#api-reference)
+- [Examples](#examples)
+- [Project layout](#project-layout)
+- [Safety model](#safety-model)
+- [Development](#development)
+- [Troubleshooting](#troubleshooting)
+- [Known limitations](#known-limitations)
+- [Roadmap](#roadmap)
+- [Contributing](#contributing)
+- [License and credits](#license-and-credits)
 
-Every observation produces a new element table:
+---
+
+## What it does
+
+Point it at a URL, give it a goal in plain language, and it drives a real Chrome
+session until the goal is visibly satisfied (or it has proven it can't).
+
+Most "browser agents" generate low-level commands — click `(x, y)`, fill selector
+`#email`, run JavaScript — which is how models leak state, hallucinate selectors,
+and wreck pages. **nova-ufast-agent inverts that model.** The agent reads the page
+into a numbered list of concrete, observable controls, then asks a decision model
+to pick *which numbered item to touch* and *with which operation*. The model never
+sees an empty action vocabulary and never invents a locator.
+
+The only generated content is text. When the chosen operation is `TYPE_TEXT`, a
+small, cheap LLM produces the string to insert; everything else is executed by the
+library against the DOM node it already observed.
+
+## Highlights
+
+- **One decision, two answers, one round trip.** Operation and element-target
+  heads share a single observed state and a single network request.
+- **Code-owned execution.** Observed node references, not model-generated
+  selectors, coordinates, shell commands, or inline JavaScript.
+- **Safety guards on every input.** Freshness checks, geometry resolution,
+  occlusion/replacement detection, and disabled/readonly rejection run right
+  before anything mutates the page.
+- **No screenshots in the hot path.** The model consumes structured state;
+  the built-in inspector opts into screenshots, the loop does not.
+- **Structured snapshots in one browser call.** Visible controls, names, values,
+  and page text are read atomically and sent onward.
+- **Bounded, retry-safe.** Decisions are consumed exactly once, mutations are
+  never replayed, and interrupted text generation can be reused only when its
+  full input context is byte-identical.
+- **Works offline.** A fixture harness and a fully offline test suite let you
+  develop without paid model calls.
+
+## How decisions are made
+
+Each iteration produces a fresh element table, indexed from `[1]`:
 
 ```text
 [1] button    Change ticket type · Round trip
@@ -28,49 +86,79 @@ Every observation produces a new element table:
 ...
 ```
 
-The operations are `CLICK`, `TYPE_TEXT`, `SELECT`, `SCROLL_UP`, `SCROLL_DOWN`, `WAIT`, `DONE`, and `BLOCKED`. Only supported operations and targets are offered.
+The agent asks one question about the *operation* and one about the matching
+*target* (only the operation that gets selected can actually execute):
 
 ```text
-                      one TypeSafe request
-                     ┌───────────────────────────┐
-page → element table → operation                 │
-                     │ click_target              │
-                     │ type_text_target          │
-                     │ select_target, if present │
-                     └─────────────┬─────────────┘
-                         use the matching target
-                                   │
-                    CLICK [7] ─────┤──→ browser
-                TYPE_TEXT [3] ─────┘
-                          ↓
-                   small LLM → text → browser
+                       one decision request
+                      ┌───────────────────────────┐
+page → element table → operation                  │
+                      │ click_target              │
+                      │ type_text_target          │
+                      │ select_target, if present │
+                      └─────────────┬─────────────┘
+                          the matching target only
+                                    │
+                     CLICK [7] ─────┤──→ browser
+                 TYPE_TEXT [3] ─────┘
+                           │
+                           ↓
+                    text LLM → value → browser
 ```
 
-Target questions are speculative. If the operation is `CLICK`, only `click_target` can execute. Two decisions, **one network round trip**. Each target head contains only compatible elements. Native dropdown choices carry an observed element/option index.
+Target questions are speculative fan-out: if the model says `CLICK`, only the
+`click_target` head can influence the action. Extra heads can't fire side effects.
 
-There are no site-specific action scripts or prepared field strings in the policy. The Flights example supplies a goal and independently verifies the outcome. The screenshot renderer adds labels afterward; it does not drive the browser.
+## Requirements
 
-## Try it
+- Python **3.12 or newer**
+- **Chrome** installed and able to open a remote-debugging port (via
+  [browser-harness](https://github.com/browser-use/browser-harness))
+- A **TypeSafe** API key for decision making
+- A text-model API key (OpenAI-compatible endpoint) only if `TYPE_TEXT` will be used
+- Linux, macOS, or Windows
+
+## Install
 
 ```bash
-git clone https://github.com/browser-use/jev-ultrafast.git
-cd jev-ultrafast
+# PyPI
+pip install nova-ufast-agent        # or: uv add nova-ufast-agent
+
+# Latest source
+git clone https://github.com/Tanmay-Somani/nova-ufast-agent.git
+cd nova-ufast-agent
 uv sync
-cp .env.example .env
-# Add TYPESAFE_API_KEY and TEXT_MODEL_API_KEY.
-uv run jev
 ```
 
-Open **http://127.0.0.1:8766** and click **Start demo → Run automatically**. The inspector shows numbered elements, operation probabilities, target probabilities, and executed actions. **Choose next** pauses before execution.
+## Quick start
 
-Chrome connects through [Browser Harness](https://github.com/browser-use/browser-harness), installed by `uv sync`. Run `uv run browser-harness --doctor` if it needs connecting. Allow remote debugging in Chrome when prompted.
+Set your keys (copy `.env.example` to `.env` and fill it in):
 
-`TEXT_MODEL_API_KEY` is an OpenRouter key in the example configuration. The current demo uses `inception/mercury-2.5` with reasoning disabled. Gemini, GLM, and DeepSeek can also use the OpenAI-compatible text helper; configure the appropriate model, endpoint, and reasoning setting.
+```bash
+cp .env.example .env
+```
 
-## Use the library
+Start the local inspector:
+
+```bash
+uv run nova-ufast
+```
+
+Open **http://127.0.0.1:8766**, pick a scenario, and click **Start demo**. You'll
+see the numbered elements, the operation/target probabilities, and a running
+decision trail. Use **Choose next** to pause before each execution and inspect
+what the model picked.
+
+If Chrome doesn't attach, run `uv run browser-harness --doctor` and allow remote
+debugging when prompted.
+
+## Using the library
+
+The entry point is the [`Agent`](#agent) context manager; iterate its `run()`
+generator to receive a state snapshot after every step:
 
 ```python
-from jev_ultrafast import Agent
+from nova_ufast_agent import Agent
 
 with Agent(
     "https://www.google.com/travel/flights?hl=en",
@@ -78,65 +166,204 @@ with Agent(
     "for one adult in economy. Stop when matching flight options are visible.",
 ) as agent:
     for state in agent.run():
-        print(state["elapsed_ms"], state["status"])
+        print(f"{state['elapsed_ms']} ms  status={state['status']}")
 ```
 
-Run with `uv run --env-file .env python your_script.py`. The same policy can run a different task:
+Each yielded state is a plain dict with `status`, `page`, `decision`, `history`,
+and more — see [API reference](#api-reference).
+
+A single goal string is the normal case, but `goals` also accepts a list to
+create an ordered plan:
+
+```python
+goals = [
+    "Open the search page.",
+    "Filter to results published this year.",
+    "Open the top result.",
+]
+with Agent("https://example.com", goals, screenshots=True) as agent:
+    for state in agent.run():
+        ...
+```
+
+## Configuration
+
+Everything is configured through environment variables (optionally via a `.env`
+file in the working directory). Secrets never ship in code.
+
+| Variable | Required | Default | Purpose |
+| --- | --- | --- | --- |
+| `TYPESAFE_API_KEY` | Yes | – | Decision model (operation + target heads) |
+| `TYPESAFE_MODEL` | No | `jev-latest` | Decision model identifier |
+| `TEXT_MODEL_API_KEY` | For `TYPE_TEXT` | – | OpenAI-compatible text helper |
+| `TEXT_MODEL` | No | `deepseek-chat` | Text helper model |
+| `TEXT_MODEL_BASE_URL` | No | `https://api.deepseek.com/v1` | Text helper endpoint |
+| `TEXT_MODEL_REASONING` | No | – | Set `none` to disable reasoning on compatible providers |
+| `TYPESAFE_DEMO_PORT` | No | `8766` | Port for the local inspector |
+
+## Operations
+
+| Operation | Meaning |
+| --- | --- |
+| `CLICK` | Press an observed element (button, link, option, calendar day, …) |
+| `TYPE_TEXT` | Replace a field's value with a string generated by the text LLM |
+| `SELECT` | Choose an observed option of a native `<select>` |
+| `SCROLL_UP` / `SCROLL_DOWN` | Scroll the viewport |
+| `WAIT` | Give the page a moment when the needed control isn't ready |
+| `DONE` | Declare the goal visibly satisfied |
+| `BLOCKED` | No supported operation can make progress |
+
+Only supported operations and their compatible targets are offered to the model
+on any given observation.
+
+## API reference
+
+### `Agent`
+
+```python
+Agent(url: str, goals: str | list[str], *, record_dir: str | None = None, screenshots: bool = False)
+```
+
+- `url` — page to open.
+- `goals` — one goal, or an ordered list forming a plan.
+- `record_dir` — if set, frames are written here as numbered JPEGs (implies
+  screenshots).
+- `screenshots` — capture and attach screenshots to each observation (off by
+  default to keep the decision loop lean).
+
+Methods:
+
+- `.run()` — generator of state dicts; yields once per executed step until
+  `status` is `done` or `blocked`.
+- `.snapshot()` — the current state dict.
+- `.command(name, body=None)` — low-level step control (`predict`, `act`, `tick`);
+  used by the inspector.
+- `.close()` — closes the owned browser tab.
+- Context-manager compatible (`with`).
+
+State dict contains at least: `status`, `page`, `decision`, `history`,
+`decisions`, `goal`, `plan`, `plan_index`, `elapsed_ms`, `text_calls`, `record`,
+and `elements` (the flattened element table). `page` embeds `url`, `title`,
+`text`, `actions` (observed controls with `id`, `kind`, `label`, `node`,
+`rect`, …), `marker`, `page_key`, and `guards`.
+
+### `Browser`
+
+```python
+Browser(url: str)
+```
+
+Connects a single CDP session to an owned Chrome tab (created in the background
+so the user's visible tab isn't swapped), renders it with focus emulation, and
+exposes `observe()`, `act()`, `fresh()`, `call()`, `evaluate()`, and `close()`.
+Raises `nova_ufast_agent.browser.StalePage` whenever a decision no longer
+matches the observed page.
+
+### Model helpers (`nova_ufast_agent.model`)
+
+- `action_space(actions)` — turns raw observed actions into indexed elements,
+  per-operation target maps, and the fixed control set.
+- `choose(state, goal, history)` — one decision round trip; returns the selected
+  operation, target, confidence, per-choice probabilities, and usage.
+- `field_context(goal, action, page, history)` / `field_text(context)` — build
+  the text-helper input and validate its JSON-only output.
+
+## Examples
+
+Both examples live in `examples/` and call real paid APIs:
 
 ```bash
+# Run any URL/goal
 uv run --env-file .env python examples/run.py \
   --url https://en.wikipedia.org/wiki/Main_Page \
   --goal 'Find and open the Wikipedia article about Gödel’s incompleteness theorems.'
+
+# Live Google Flights search with an independent result check (never books)
+uv run --env-file .env python examples/flights.py --keep-open
 ```
 
-`uv run --env-file .env python examples/flights.py --keep-open` performs the flight search, checks the actual route/date/results, and saves its trace. It does not select or book a flight.
+## Project layout
 
-## Why it moves
+```text
+nova_ufast_agent/
+├── agent.py        # the complete decision/execute loop + text-helper handoff
+├── browser.py      # CDP session, snapshots, freshness/occlusion guards, input
+├── model.py        # operation + target heads, decision validation, text helper
+├── questions.py    # model instructions and step budget (MAX_STEPS = 60)
+├── snapshot.js     # atomic DOM reader producing indexed, guarded actions
+├── demo.py         # loopback-only local inspector server
+└── static/         # inspector frontend (HTML/CSS/JS + offline fixtures)
+examples/           # run.py (any goal), flights.py (verified Flights search)
+tests/              # offline contract tests – no paid APIs
+```
 
-- **One request per decision cycle.** Operation and target heads share the same observed state.
-- **No screenshots in the default agent loop.** Jev consumes structured state. The inspector opts into screenshots; the video uses a separate continuous screencast.
-- **One browser call per snapshot.** Read visible controls, their names, values, and text atomically. Keep references to the actual DOM nodes.
-- **Validate the selected target.** Clicks check the document, form values, target, and nearby context. Animation alone does not force another prediction. Resolve current geometry and reject covered controls before input.
-- **Wait for useful state.** After typing into a combobox, wait for visible suggestions, capped at 200 ms. Other interactions get at most two animation frames or 50 ms. These reads happen after execution is logged.
-- **Keep hidden tabs rendering.** Focus emulation prevents background animation throttling without switching Chrome's visible tab.
-- **Send visible text.** Offscreen article bodies and footers do not fill the model context.
-- **Reuse an interrupted text request.** A generated value survives a stale-page retry only if the entire text-helper input is unchanged.
+## Safety model
 
-Every executed target is resolved from an observed node. The executor rechecks page freshness and click occlusion. Model output never becomes selectors, coordinates, shell commands, or executable JavaScript. Text-helper output must parse as a small JSON object before typing.
-
-## Small enough to read
-
-| File | Job |
-| --- | --- |
-| [agent.py](jev_ultrafast/agent.py) | The complete loop and text-helper handoff |
-| [snapshot.js](jev_ultrafast/snapshot.js) | Atomic DOM snapshot, indexed controls, freshness guards |
-| [browser.py](jev_ultrafast/browser.py) | Browser connection, current geometry, execution |
-| [model.py](jev_ultrafast/model.py) | Dynamic operation/target heads and text generation |
-| [questions.py](jev_ultrafast/questions.py) | Model instructions |
-| [demo.py](jev_ultrafast/demo.py) | Local inspector |
-
-## Evidence and limits
-
-The current video is a **7,073 ms** Google Flights run. Timing starts after initial page observation and includes model calls, generated text, browser work, stale decisions, and loading waits. A fresh independent check verifies the one-way setting, Zürich, London, September 20, 2026, and visible flight options. The video plays at 1×, with no opening hold and a 0.5-second final hold.
-
-In six alternating runs with identical models and settings, both versions passed **3/3**. Median task time went from **9.450 s → 7.092 s**, a **25% reduction**; median browser protocol calls went from **1,092 → 101**. This is three repeats of one task on one browser profile, not a general reliability benchmark.
-
-The same policy opened the requested Wikipedia article in **2.798 s** and passed a local hotel search/filter task in **1.896 s**. Runs, failures, source hashes, and measurement boundaries are in [performance.md](docs/performance.md).
-
-A `DONE` choice still requires independent outcome verification. The DOM reader handles common HTML and ARIA controls, not the full accessible-name specification. Shadow roots, frames, canvas, uploads, pop-up tabs, nested scrolling, and arbitrary keyboard widgets remain outside this MVP. Owned tabs share the existing Chrome profile.
+1. **Everything executes from an observed node.** Model output is an index into
+   the observed element table — never a selector, offset, script, or shell line.
+2. **Re-verify before touching.** Prior to input, the executor re-checks
+   document freshness, element connectivity/disabled state, geometry, and
+   center-hit coverage (`elementFromPoint`).
+3. **Protect real fields.** Disabled, readonly, and `aria-readonly` fields are
+   rejected.
+4. **One chance per mutation.** A decision is burned before any work; a stale
+   retry can never double-fire an action.
+5. **Text is gated.** `TYPE_TEXT` requires validated JSON from a permissioned
+   helper — free-text from the decision model can't reach the keyboard path.
+6. **`DONE` is a claim, not a proof.** The loop stops, but verifying the real
+   outcome is on you (see `examples/flights.py::verify`).
 
 ## Development
 
 ```bash
+uv sync
 uv run ruff check .
 uv run pytest
-node --check jev_ultrafast/static/app.js
-node --check jev_ultrafast/snapshot.js
+node --check nova_ufast_agent/static/app.js
+node --check nova_ufast_agent/snapshot.js
 uv build
 ```
 
-Tests are offline. `uv run python scripts/check_guards.py` checks real controls in a local browser without model calls. Live examples and recording scripts make paid API calls. `scripts/record_flights.py <new-folder>` captures original browser timestamps; `scripts/render_demo.py <recording-folder>` renders that verified run at 1× and crops out the Google account strip. Credentials and raw traces stay ignored.
+The test suite runs fully offline — model calls are mocked, no API keys needed.
 
----
+## Troubleshooting
 
-[Browser Use](https://github.com/browser-use/browser-use) · [Browser Harness](https://github.com/browser-use/browser-harness) · [TypeSafe speculative fan-out](https://docs.typesafe.ai/patterns/fan-out)
+| Symptom | Likely fix |
+| --- | --- |
+| Chrome won't connect | `uv run browser-harness --doctor`; allow remote debugging when Chrome asks |
+| `403` from the inspector | The demo server only accepts locals requests; don't proxy or expose port 8766 |
+| `TypeError: ... __init__() got an unexpected keyword argument` | Old build cached; reinstall `nova-ufast-agent` (or `uv sync`) |
+| `TEXT_MODEL_API_KEY` errors only when typing | Expected — it's only needed for `TYPE_TEXT` |
+| Demo port busy | Set `TYPESAFE_DEMO_PORT` to a free port |
+
+## Known limitations
+
+- DOM reading covers common HTML/ARIA controls; it is not the full
+  accessible-name spec.
+- Shadow roots, iframes, canvas, uploads, new pop-up tabs, nested scrollers, and
+  arbitrary keyboard widgets are unsupported.
+- Owned tabs share the existing Chrome profile.
+- `DONE` decisions still require independent outcome verification.
+
+## Roadmap
+
+- [x] Rebranded fork with clean package boundary (`nova_ufast_agent`)
+- [x] Repackaged and vetted for PyPI (wheel + sdist, py3.12+)
+- [x] Rebuilt inspector frontend (dark theme, animated overlays)
+- [ ] Pluggable decision/helper adapters (OpenAI-compatible choice endpoints)
+- [ ] Shadow-root / frame traversal in the DOM reader
+- [ ] Optional headless mode
+- [ ] GitHub Actions CI (lint + tests + publish on tag)
+
+## Contributing
+
+PRs, issues, and ideas are welcome. Keep the loop small — page → indexed
+elements → operation + target → execution — and never let the model emit
+executable instructions. Read `AGENTS.md` before editing. Tests must stay
+offline and free of paid API calls.
+
+## License and credits
+
+MIT — see [LICENSE](LICENSE). This project started as a rebranded, repackaged
+derivative of Browser Use's [jev-ultrafast](https://github.com/browser-use/jev-ultrafast)
+and is grateful to its authors for the design.
